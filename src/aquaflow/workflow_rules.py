@@ -86,10 +86,14 @@ def evaluate(name: str, p: dict[str, Any]) -> dict[str, Any]:
         result = current(rows, str(p["sample"]), str(p["analyte"]))
         return {"decision": "publish", "value": result.revision, "evidence": {"value": result.value}}
     if name == "meter_balance":
-        ins = [Meter(str(x["id"]), Decimal(str(x["opening"])), Decimal(str(x["closing"])), Decimal(str(x["multiplier"])) if p.get("_register_mode") == "multiplied" else Decimal(1)) for x in p["inputs"]]
-        outs = [Meter(str(x["id"]), Decimal(str(x["opening"])), Decimal(str(x["closing"])), Decimal(str(x["multiplier"]))) for x in p["outputs"]]
+        # The multiplier belongs to the physical meter and must always be
+        # carried into the balance for both inputs and outputs; registers
+        # without an explicit multiplier default to 1 (unscaled register).
+        ins = [Meter(str(x["id"]), Decimal(str(x["opening"])), Decimal(str(x["closing"])), Decimal(str(x.get("multiplier", 1)))) for x in p["inputs"]]
+        outs = [Meter(str(x["id"]), Decimal(str(x["opening"])), Decimal(str(x["closing"])), Decimal(str(x.get("multiplier", 1)))) for x in p["outputs"]]
         result = balance(ins, outs, Decimal(str(p["known_loss"])))
-        return {"decision": "reconcile" if result >= 0 else "investigate", "value": result, "evidence": {"inputs": len(ins), "outputs": len(outs)}}
+        needs_investigation = result < 0
+        return {"decision": "investigate" if needs_investigation else "reconcile", "value": result, "needs_investigation": needs_investigation, "evidence": {"inputs": len(ins), "outputs": len(outs)}}
     if name == "leak_localization":
         rows = [Signal(str(x["sensor"]), str(x["pipe"]), float(x["drop"]), float(x["acoustic"]), float(x["night_delta"])) for x in p["signals"]]
         result = rank(rows)
